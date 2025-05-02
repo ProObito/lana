@@ -249,15 +249,21 @@ async def handle_text(client, message):
             asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
 
 # Handle font selection
-@app.on_callback_query(filters.regex('font_.*'))
-async def handle_font_selection(client, callback_query):
-    user_id = callback_query.from_user.id
+@app.on_message(filters.command("font") & filters.private)
+async def handle_font_selection(client, message):
+    user_id = message.from_user.id
     user_data = load_user_data()
     if str(user_id) not in user_data or user_data[str(user_id)]['step'] != 'font':
-        await callback_query.answer()
+        msg = await message.reply("❌ Please complete the banner creation process to select a font.")
+        asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
         return
 
-    font = callback_query.data.replace('font_', '')
+    font = message.text.replace('/font ', '')
+    if font not in get_fonts():
+        msg = await message.reply(f"❌ Font `{font}` not found. Please select a valid font from the list.")
+        asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
+        return
+
     user_data[str(user_id)]['font'] = font
     user_data[str(user_id)]['step'] = None
     save_user_data(user_data)
@@ -265,13 +271,12 @@ async def handle_font_selection(client, callback_query):
     try:
         # Generate banner
         generate_banner(user_id)
-        await callback_query.message.reply_photo(photo=f"{DATA_DIR}{user_id}_banner.jpg")
-        msg = await callback_query.message.reply("🎉 Banner created successfully!")
-        asyncio.create_task(delete_message_later(client, callback_query.message.chat.id, msg.id))
+        await message.reply_photo(photo=f"{DATA_DIR}{user_id}_banner.jpg")
+        msg = await message.reply("🎉 Banner created successfully!")
+        asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
     except Exception as e:
-        msg = await callback_query.message.reply("❌ Error generating banner. Please try again.")
-        asyncio.create_task(delete_message_later(client, callback_query.message.chat.id, msg.id))
-    await callback_query.answer()
+        msg = await message.reply("❌ Error generating banner. Please try again.")
+        asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
 
 # Generate banner
 def generate_banner(user_id):
@@ -410,7 +415,9 @@ async def restart(client, message):
 async def main():
     await app.start()
     print("Bot is running...")
-    await app.idle()
+    # Keep the bot running without idle()
+    while True:
+        await asyncio.sleep(3600)  # Sleep for an hour to keep the loop alive
 
 if __name__ == '__main__':
     asyncio.run(main())
