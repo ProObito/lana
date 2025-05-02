@@ -108,6 +108,12 @@ async def delete_message_later(client, chat_id, message_id, delay=30):
     except:
         pass
 
+# Custom filter for non-command text messages
+def non_command_text():
+    async def func(flt, client, message):
+        return filters.text.filter(flt, client, message) and not message.text.startswith('/')
+    return filters.create(func)
+
 # Save font to MongoDB and fonts/ directory
 @app.on_message(filters.command("save") & filters.private & filters.reply & filters.user(ADMIN_ID))
 async def save_font(client, message):
@@ -174,7 +180,7 @@ async def handle_image(client, message):
         asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
 
 # Handle text inputs
-@app.on_message(filters.text & ~filters.command & filters.private)
+@app.on_message(non_command_text() & filters.private)
 async def handle_text(client, message):
     user_id = message.from_user.id
     user_data = load_user_data()
