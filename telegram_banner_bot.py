@@ -7,13 +7,15 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import requests
 
 # Configuration
-API_ID    = os.environ.get("API_ID", "20718334") 
+# pyro client config
+API_ID    = os.environ.get("API_ID", "20718334")
 API_HASH  = os.environ.get("API_HASH", "4e81464b29d79c58d0ad8a0c55ece4a5")
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "7403693425:AAHaGlkp-zNNPvNeO62xWqwmsRI5apY0Dcs")  # From @BotFather
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "7830743177:AAHkVvb0AwI-bDqa7O0JUZdb_tvSdS4E0fA") 
+ADMIN_ID = 5585016974  # Replace with your Telegram user ID (admin)
 FONT_DIR = 'fonts/'
 DATA_DIR = 'data/'
 USER_DATA_FILE = os.path.join(DATA_DIR, 'user_data.json')
-AUTHORIZED_USERS = [5585016974]  # Replace with your Telegram user ID
+AUTHO_USERS_FILE = os.path.join(DATA_DIR, 'autho_users.json')
 STATUS_OPTIONS = ['ONGOING', 'PUSHED', 'COMPLETE', 'AIRING']
 STATUS_EMOJIS = {'ONGOING': '🔍', 'PUSHED': '🔍', 'COMPLETE': '🔍', 'AIRING': '🔍'}
 
@@ -46,6 +48,40 @@ def save_user_data(data):
     with open(USER_DATA_FILE, 'w') as f:
         json.dump(data, f, indent=4)
 
+# Load or initialize authorized users
+def load_autho_users():
+    if os.path.exists(AUTHO_USERS_FILE):
+        with open(AUTHO_USERS_FILE, 'r') as f:
+            return json.load(f)
+    return []
+
+def save_autho_users(users):
+    with open(AUTHO_USERS_FILE, 'w') as f:
+        json.dump(users, f, indent=4)
+
+# Add authorized user
+async def add_autho_user(user_id):
+    users = load_autho_users()
+    if user_id not in users:
+        users.append(user_id)
+        save_autho_users(users)
+
+# Remove authorized user
+async def remove_autho_user(user_id):
+    users = load_autho_users()
+    if user_id in users:
+        users.remove(user_id)
+        save_autho_users(users)
+
+# Check if user is authorized
+async def is_autho_user_exist(user_id):
+    users = load_autho_users()
+    return user_id in users
+
+# Get all authorized users
+async def get_all_autho_users():
+    return load_autho_users()
+
 # Get available fonts
 def get_fonts():
     available_fonts = [f for f in os.listdir(FONT_DIR) if f.endswith('.ttf')]
@@ -71,10 +107,6 @@ def init_user_state(user_id):
         save_user_data(user_data)
     return user_data
 
-# Check if user is authorized
-def is_authorized(user_id):
-    return user_id in AUTHORIZED_USERS
-
 # Auto-delete message
 async def delete_message_later(client, chat_id, message_id, delay=30):
     await asyncio.sleep(delay)
@@ -87,8 +119,8 @@ async def delete_message_later(client, chat_id, message_id, delay=30):
 @app.on_message(filters.command("create_banner") & filters.private)
 async def create_banner(client, message):
     user_id = message.from_user.id
-    if not is_authorized(user_id):
-        msg = await message.reply("🚫 You are not authorized to use this bot.")
+    if not await is_autho_user_exist(user_id):
+        msg = await message.reply("🚫 You are not authorized to use this bot. Contact the admin to be added.")
         asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
         return
 
@@ -167,10 +199,189 @@ async def handle_text(client, message):
         try:
             blur = int(text)
             if 0 <= blur <= 3:
-                user_data[str(user_id)]['blur_intensity'] = int(text)
+                user_data[str(user_id)]['blur_intensity'] = blur
                 user_data[str(user_id)]['step'] = 'font'
                 save_user_data(user_data)
                 # Show font options
                 fonts = get_fonts()
                 if not fonts:
-                    msg = await message.reply("❌ No fonts available. Please contact the developer to add fonts like Montserrat, Poppins
+                    msg = await message.reply("❌ No fonts available. Please contact the developer to add fonts like Montserrat, Poppins, or Bebas Neue.")
+                    asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
+                    return
+                keyboard = [[InlineKeyboardButton(font.replace('.ttf', ''), callback_data=f"font_{font}")] for font in fonts]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                msg = await message.reply("✅ Blur intensity received! Please select a font:", reply_markup=reply_markup)
+                asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
+            else:
+                msg = await message.reply("❌ Invalid blur intensity! Please send a number between 0 and 3.")
+                asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
+        except ValueError:
+            msg = await message.reply("❌ Please send a valid number for blur intensity.")
+            asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
+
+# Handle font selection
+@app.on_callback_query(filters.regex('font_.*'))
+async def handle_font_selection(client, callback_query):
+    user_id = callback_query.from_user.id
+    user_data = load_user_data()
+    if str(user_id) not in user_data or user_data[str(user_id)]['step'] != 'font':
+        await callback_query.answer()
+        return
+
+    font = callback_query.data.replace('font_', '')
+    user_data[str(user_id)]['font'] = font
+    user_data[str(user_id)]['step'] = None
+    save_user_data(user_data)
+
+    try:
+        # Generate banner
+        generate_banner(user_id)
+        await callback_query.message.reply_photo(photo=f"{DATA_DIR}{user_id}_banner.jpg")
+        msg = await callback_query.message.reply("🎉 Banner created successfully!")
+        asyncio.create_task(delete_message_later(client, callback_query.message.chat.id, msg.id))
+    except Exception as e:
+        msg = await callback_query.message.reply("❌ Error generating banner. Please try again.")
+        asyncio.create_task(delete_message_later(client, callback_query.message.chat.id, msg.id))
+    await callback_query.answer()
+
+# Generate banner
+def generate_banner(user_id):
+    user_data = load_user_data()[str(user_id)]
+    image_path = user_data['image']
+    name = user_data['name']
+    description = user_data['description']
+    about = user_data['about']
+    status = user_data['status']
+    font = user_data['font']
+    watermark_text = user_data['watermark_text']
+    blur_intensity = user_data['blur_intensity']
+
+    # Load image
+    img = Image.open(image_path)
+    
+    # Apply blur if requested
+    if blur_intensity > 0:
+        img = img.filter(ImageFilter.GaussianBlur(radius=blur_intensity))
+
+    draw = ImageDraw.Draw(img)
+    font_path = os.path.join(FONT_DIR, font)
+    font_size = 40
+    font_obj = ImageFont.truetype(font_path, font_size)
+
+    # Text positions (adjust based on your template)
+    positions = {
+        'name': (50, 50),
+        'description': (50, 150),
+        'about': (50, 250),
+        'status': (50, 350),
+        'watermark': (50, 450)
+    }
+
+    # Draw text with underline support
+    for key, text in [('name', name), ('description', description), ('about', about), ('status', f"{status} {STATUS_EMOJIS[status]}")]:
+        if text:
+            if '_' in text:
+                text = text.replace('_', '')  # Remove underscore for display
+                draw.text(positions[key], text, font=font_obj, fill='white')
+                # Add underline
+                text_width, text_height = draw.textsize(text, font=font_obj)
+                draw.line((positions[key][0], positions[key][1] + text_height, 
+                           positions[key][0] + text_width, positions[key][1] + text_height), fill='white', width=2)
+            else:
+                draw.text(positions[key], text, font=font_obj, fill='white')
+
+    # Add watermark
+    if watermark_text:
+        draw.text(positions['watermark'], watermark_text, font=font_obj, fill=(255, 255, 255, 128))  # Semi-transparent
+
+    # Save banner
+    banner_path = f"{DATA_DIR}{user_id}_banner.jpg"
+    img.save(banner_path)
+
+# Authorization Commands
+@app.on_message(filters.command("addautho_user") & filters.private & filters.user(ADMIN_ID))
+async def addauthorise_user(client, message):
+    ids = message.text.removeprefix("/addautho_user").strip().split()
+    check = 1
+
+    try:
+        if len(ids) > 0:
+            for id in ids:
+                if len(id) == 10 and id.isdigit():
+                    await add_autho_user(int(id))
+                else:
+                    check = 0
+                    break
+        else:
+            check = 0
+    except ValueError:
+        check = 0
+
+    if check == 1:
+        msg = await message.reply(f'**Authorised Users Added ✅**\n<blockquote>`{" ".join(ids)}`</blockquote>')
+    else:
+        msg = await message.reply(f"**INVALID USE OF COMMAND:**\n"
+                                 "<blockquote>**➪ Check if the command is empty OR the added ID should be correct (10 digit numbers)**</blockquote>")
+    asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
+
+@app.on_message(filters.command("delautho_user") & filters.private & filters.user(ADMIN_ID))
+async def deleteauthorise_user(client, message):
+    ids = message.text.removeprefix("/delautho_user").strip().split()
+    check = 1
+
+    try:
+        if len(ids) > 0:
+            for id in ids:
+                if len(id) == 10 and id.isdigit():
+                    await remove_autho_user(int(id))
+                else:
+                    check = 0
+                    break
+        else:
+            check = 0
+    except ValueError:
+        check = 0
+
+    if check == 1:
+        msg = await message.reply(f'**Delete Authorised Users 🆑**\n<blockquote>`{" ".join(ids)}`</blockquote>')
+    else:
+        msg = await message.reply(f"**INVALID USE OF COMMAND:**\n"
+                                 "<blockquote>**➪ Check if the command is empty OR the added ID should be correct (10 digit numbers)**</blockquote>")
+    asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
+
+@app.on_message(filters.command("autho_users") & filters.private & filters.user(ADMIN_ID))
+async def authorise_user_list(client, message):
+    autho_users = await get_all_autho_users()
+    if autho_users:
+        autho_users_str = "\n".join(map(str, autho_users))
+        msg = await message.reply(f"🚻 **AUTHORIZED USERS:** 🌀\n\n`{autho_users_str}`")
+    else:
+        msg = await message.reply("No authorized users found.")
+    asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
+
+@app.on_message(filters.command("check_autho") & filters.private)
+async def check_authorise_user(client, message):
+    user_id = message.from_user.id
+    check = await is_autho_user_exist(user_id)
+    if check:
+        msg = await message.reply("**Yes, You are Authorised user 🟢**\n**<blockquote>You can send files to create banners.</blockquote>**")
+    else:
+        msg = await message.reply("**Nope, You are not Authorised user 🔴**\n<blockquote>**You can't create banners.**</blockquote>\n**Contact the admin to add you as an Authorised user.**")
+    asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
+
+# Restart bot (VPS only)
+@app.on_message(filters.command("restart") & filters.private & filters.user(ADMIN_ID))
+async def restart(client, message):
+    msg = await message.reply("🔄 Restarting bot...")
+    asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
+    os.system("nohup python telegram_banner_bot.py &")
+    exit()
+
+# Main function
+async def main():
+    await app.start()
+    print("Bot is running...")
+    await app.idle()
+
+if __name__ == '__main__':
+    asyncio.run(main())
