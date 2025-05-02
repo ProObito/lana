@@ -11,3 +11,4 @@ pillow
 hachoir
 telegram 
 requests
+pymongo
