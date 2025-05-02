@@ -10,3 +10,4 @@ motor
 pillow
 hachoir
 telegram 
+requests
