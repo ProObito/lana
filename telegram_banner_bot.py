@@ -5,13 +5,15 @@ from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import requests
+import pymongo
+from bson import ObjectId
 
 # Configuration
-# pyro client config
 API_ID    = os.environ.get("API_ID", "20718334")
 API_HASH  = os.environ.get("API_HASH", "4e81464b29d79c58d0ad8a0c55ece4a5")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "7830743177:AAHkVvb0AwI-bDqa7O0JUZdb_tvSdS4E0fA") 
-ADMIN_ID = 5585016974  # Replace with your Telegram user ID (admin)
+ADMIN_ID = 5585016974  # 
+MONGO_URI = os.getenv('MONGO_URI', 'mongodb+srv://obito:umaid2008@cluster0.engyc.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')  # MongoDB Atlas connection string
 FONT_DIR = 'fonts/'
 DATA_DIR = 'data/'
 USER_DATA_FILE = os.path.join(DATA_DIR, 'user_data.json')
@@ -25,19 +27,15 @@ if not os.path.exists(DATA_DIR):
 if not os.path.exists(FONT_DIR):
     os.makedirs(FONT_DIR)
 
-# List of fonts to be included in the fonts/ directory
-FONTS = [
-    'Montserrat-Bold.ttf',  # Alternative for Moon Rising (bold, modern)
-    'Poppins-Regular.ttf',  # Alternative for Havitas (geometric, stylish)
-    'BebasNeue-Regular.ttf',  # Alternative for Coolveta (condensed, bold)
-    'Roboto-Regular.ttf',    # Additional stylish font
-    'OpenSans-Bold.ttf'      # Additional versatile font
-]
+# MongoDB setup
+mongo_client = pymongo.MongoClient(MONGO_URI)
+db = mongo_client['BannerBotDB']
+fonts_collection = db['fonts']
 
 # Initialize Pyrogram client
 app = Client("banner_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Load or initialize user data
+# Load or initialize user data (file-based)
 def load_user_data():
     if os.path.exists(USER_DATA_FILE):
         with open(USER_DATA_FILE, 'r') as f:
@@ -48,7 +46,7 @@ def save_user_data(data):
     with open(USER_DATA_FILE, 'w') as f:
         json.dump(data, f, indent=4)
 
-# Load or initialize authorized users
+# Load or initialize authorized users (file-based)
 def load_autho_users():
     if os.path.exists(AUTHO_USERS_FILE):
         with open(AUTHO_USERS_FILE, 'r') as f:
@@ -59,37 +57,32 @@ def save_autho_users(users):
     with open(AUTHO_USERS_FILE, 'w') as f:
         json.dump(users, f, indent=4)
 
-# Add authorized user
+# Authorization functions
 async def add_autho_user(user_id):
     users = load_autho_users()
     if user_id not in users:
         users.append(user_id)
         save_autho_users(users)
 
-# Remove authorized user
 async def remove_autho_user(user_id):
     users = load_autho_users()
     if user_id in users:
         users.remove(user_id)
         save_autho_users(users)
 
-# Check if user is authorized
 async def is_autho_user_exist(user_id):
     users = load_autho_users()
     return user_id in users
 
-# Get all authorized users
 async def get_all_autho_users():
     return load_autho_users()
 
-# Get available fonts
+# Get available fonts from MongoDB
 def get_fonts():
-    available_fonts = [f for f in os.listdir(FONT_DIR) if f.endswith('.ttf')]
-    if not available_fonts:
-        return FONTS  # Fallback to default font list if directory is empty
-    return available_fonts
+    fonts = fonts_collection.find()
+    return [font['filename'] for font in fonts]
 
-# Initialize user state
+# Initialize user state (file-based)
 def init_user_state(user_id):
     user_data = load_user_data()
     if str(user_id) not in user_data:
@@ -115,11 +108,41 @@ async def delete_message_later(client, chat_id, message_id, delay=30):
     except:
         pass
 
+# Save font to MongoDB and fonts/ directory
+@app.on_message(filters.command("save") & filters.private & filters.reply & filters.user(ADMIN_ID))
+async def save_font(client, message):
+    if not message.reply_to_message.document or not message.reply_to_message.document.file_name.endswith('.ttf'):
+        msg = await message.reply("❌ Please reply to a `.ttf` font file with `/save`.")
+        asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
+        return
+
+    user_id = message.from_user.id
+    document = message.reply_to_message.document
+    font_filename = document.file_name
+    font_path = os.path.join(FONT_DIR, font_filename)
+
+    try:
+        # Download font file
+        await document.download(font_path)
+
+        # Save font metadata to MongoDB
+        font_data = {
+            'filename': font_filename,
+            'file_id': document.file_id
+        }
+        fonts_collection.update_one({'filename': font_filename}, {'$set': font_data}, upsert=True)
+
+        msg = await message.reply(f"✅ Font `{font_filename}` saved successfully and added to selection!")
+        asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
+    except Exception as e:
+        msg = await message.reply(f"❌ Error saving font: {str(e)}")
+        asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
+
 # Start banner creation
 @app.on_message(filters.command("create_banner") & filters.private)
 async def create_banner(client, message):
     user_id = message.from_user.id
-    if not await is_autho_user_exist(user_id):
+    if user_id != ADMIN_ID and not await is_autho_user_exist(user_id):
         msg = await message.reply("🚫 You are not authorized to use this bot. Contact the admin to be added.")
         asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
         return
@@ -202,10 +225,10 @@ async def handle_text(client, message):
                 user_data[str(user_id)]['blur_intensity'] = blur
                 user_data[str(user_id)]['step'] = 'font'
                 save_user_data(user_data)
-                # Show font options
+                # Show font options from MongoDB
                 fonts = get_fonts()
                 if not fonts:
-                    msg = await message.reply("❌ No fonts available. Please contact the developer to add fonts like Montserrat, Poppins, or Bebas Neue.")
+                    msg = await message.reply("❌ No fonts available. Please upload and save fonts using `/save`.")
                     asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
                     return
                 keyboard = [[InlineKeyboardButton(font.replace('.ttf', ''), callback_data=f"font_{font}")] for font in fonts]
@@ -268,7 +291,7 @@ def generate_banner(user_id):
     font_size = 40
     font_obj = ImageFont.truetype(font_path, font_size)
 
-    # Text positions (adjust based on your template)
+    # Text positions (hardcoded, not stored in DB)
     positions = {
         'name': (50, 50),
         'description': (50, 150),
