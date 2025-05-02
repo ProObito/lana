@@ -1,6 +1,6 @@
 import os
 import json
-from pyrogram import Update
+from pyrogram import Client, filters
 from pyrogram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, JobQueue
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
