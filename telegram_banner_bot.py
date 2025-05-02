@@ -12,7 +12,8 @@ from bson import ObjectId
 API_ID    = os.environ.get("API_ID", "20718334")
 API_HASH  = os.environ.get("API_HASH", "4e81464b29d79c58d0ad8a0c55ece4a5")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "7830743177:AAHkVvb0AwI-bDqa7O0JUZdb_tvSdS4E0fA") 
-ADMIN_ID = 5585016974  # 
+ADMIN_ID = 5585016974  
+START_PIC = os.environ.get("START_PIC", "https://graph.org/file/29a3acbbab9de5f45a5fe.jpg")
 MONGO_URI = os.getenv('MONGO_URI', 'mongodb+srv://obito:umaid2008@cluster0.engyc.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')  # MongoDB Atlas connection string
 FONT_DIR = 'fonts/'
 DATA_DIR = 'data/'
