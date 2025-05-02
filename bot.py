@@ -10,7 +10,7 @@ BOT_TOKEN = '7403693425:AAHaGlkp-zNNPvNeO62xWqwmsRI5apY0Dcs'  # Replace with you
 FONT_DIR = 'fonts/'
 DATA_DIR = 'data/'
 USER_DATA_FILE = os.path.join(DATA_DIR, 'user_data.json')
-AUTHORIZED_USERS = [123456789]  # Replace with your Telegram user ID
+AUTHORIZED_USERS = [5585016974]  # Replace with your Telegram user ID
 STATUS_OPTIONS = ['ONGOING', 'PUSHED', 'COMPLETE', 'AIRING']
 STATUS_EMOJIS = {'ONGOING': '🔍', 'PUSHED': '🔍', 'COMPLETE': '🔍', 'AIRING': '🔍'}
 
