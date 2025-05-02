@@ -1,7 +1,7 @@
 import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from telegram_banner_bot.py import txt
+from telegram_banner_bot.py import *
 
 @Client.on_message(filters.private & filters.command("start"))
 async def start_command(client, message):
@@ -22,16 +22,16 @@ async def start_command(client, message):
         [InlineKeyboardButton('• ᴜᴘᴅᴀᴛᴇs', url='https://t.me/animes_sub_society')],
         [InlineKeyboardButton('• ᴀʙᴏᴜᴛ', callback_data='about'), InlineKeyboardButton('sᴏᴜʀᴄᴇ •', callback_data='source')]
     ])
-    if Config.START_PIC:
-        await message.reply_photo(Config.START_PIC, caption=Txt.START_TXT.format(user.mention), reply_markup=buttons)
+    if telegram_banner_bot.py.START_PIC:
+        await message.reply_photo(Config.START_PIC, caption=telegram_banner_bot.START_TXT.format(user.mention), reply_markup=buttons)
     else:
-        await message.reply_text(Txt.START_TXT.format(user.mention), reply_markup=buttons, disable_web_page_preview=True)
+        await message.reply_text(telegram_banner_bot.START_TXT.format(user.mention), reply_markup=buttons, disable_web_page_preview=True)
 
 @Client.on_message(filters.private & filters.command("help"))
 async def help_command(client, message):
     bot = await client.get_me()
     await message.reply_text(
-        Txt.HELP_TXT.format(mention=bot.mention),
+        telegram_banner_bot.HELP_TXT.format(mention=bot.mention),
         disable_web_page_preview=True,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("• ᴀᴜᴛᴏ ʀᴇɴᴀᴍᴇ ғᴏʀᴍᴀᴤ", callback_data='file_names')],
