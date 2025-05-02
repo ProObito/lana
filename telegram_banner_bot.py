@@ -1,13 +1,15 @@
 import os
 import json
+import asyncio
 from pyrogram import Client, filters
-from pyrogram import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import requests
 
 # Configuration
-BOT_TOKEN = os.getenv('BOT_TOKEN', '7403693425:AAHaGlkp-zNNPvNeO62xWqwmsRI5apY0Dcs')  # Use environment variable for security
+API_ID    = os.environ.get("API_ID", "20718334") 
+API_HASH  = os.environ.get("API_HASH", "4e81464b29d79c58d0ad8a0c55ece4a5")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "7403693425:AAHaGlkp-zNNPvNeO62xWqwmsRI5apY0Dcs")  # From @BotFather
 FONT_DIR = 'fonts/'
 DATA_DIR = 'data/'
 USER_DATA_FILE = os.path.join(DATA_DIR, 'user_data.json')
@@ -29,6 +31,9 @@ FONTS = [
     'Roboto-Regular.ttf',    # Additional stylish font
     'OpenSans-Bold.ttf'      # Additional versatile font
 ]
+
+# Initialize Pyrogram client
+app = Client("banner_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # Load or initialize user data
 def load_user_data():
@@ -70,206 +75,102 @@ def init_user_state(user_id):
 def is_authorized(user_id):
     return user_id in AUTHORIZED_USERS
 
-# Send temporary message (auto-delete)
-async def send_temp_message(update: Update, text: str, delay: int = 30):
-    message = await update.message.reply_text(text)
-    JobQueue(update.message.bot).run_once(delete_message, delay, data={'chat_id': message.chat_id, 'message_id': message.message_id})
-
-async def delete_message(context):
+# Auto-delete message
+async def delete_message_later(client, chat_id, message_id, delay=30):
+    await asyncio.sleep(delay)
     try:
-        await context.bot.delete_message(chat_id=context.job.data['chat_id'], message_id=context.job.data['message_id'])
+        await client.delete_messages(chat_id, message_id)
     except:
         pass
 
 # Start banner creation
-async def create_banner(update: Update, context):
-    user_id = update.effective_user.id
+@app.on_message(filters.command("create_banner") & filters.private)
+async def create_banner(client, message):
+    user_id = message.from_user.id
     if not is_authorized(user_id):
-        await send_temp_message(update, "🚫 You are not authorized to use this bot.")
+        msg = await message.reply("🚫 You are not authorized to use this bot.")
+        asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
         return
 
     user_data = init_user_state(user_id)
     user_data[str(user_id)]['step'] = 'image'
     save_user_data(user_data)
-    await send_temp_message(update, "🎨 Please upload an image for the banner.")
+    msg = await message.reply("🎨 Please upload an image for the banner.")
+    asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
 
 # Handle image upload
-async def handle_image(update: Update, context):
-    user_id = update.effective_user.id
+@app.on_message(filters.photo & filters.private)
+async def handle_image(client, message):
+    user_id = message.from_user.id
     user_data = load_user_data()
     if str(user_id) not in user_data or user_data[str(user_id)]['step'] != 'image':
         return
 
     try:
-        photo = update.message.photo[-1]  # Get highest resolution photo
-        file = await photo.get_file()
         image_path = f"{DATA_DIR}{user_id}_image.jpg"
-        await file.download_to_drive(image_path)
+        await message.download(image_path)
         user_data[str(user_id)]['image'] = image_path
         user_data[str(user_id)]['step'] = 'name'
         save_user_data(user_data)
-        await send_temp_message(update, "🖼️ Image received! Please send the name text (use _ for underline, e.g., _Hannah_).")
+        msg = await message.reply("🖼️ Image received! Please send the name text (use _ for underline, e.g., _Hannah_).")
+        asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
     except Exception as e:
-        await send_temp_message(update, "❌ Error processing image. Please upload a valid image.")
+        msg = await message.reply("❌ Error processing image. Please upload a valid image.")
+        asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
 
 # Handle text inputs
-async def handle_text(update: Update, context):
-    user_id = update.effective_user.id
+@app.on_message(filters.text & ~filters.command & filters.private)
+async def handle_text(client, message):
+    user_id = message.from_user.id
     user_data = load_user_data()
     if str(user_id) not in user_data:
         return
 
     step = user_data[str(user_id)]['step']
-    text = update.message.text
+    text = message.text
 
     if step == 'name':
         user_data[str(user_id)]['name'] = text
         user_data[str(user_id)]['step'] = 'description'
         save_user_data(user_data)
-        await send_temp_message(update, "✅ Name received! Please send the description text (use _ for underline).")
+        msg = await message.reply("✅ Name received! Please send the description text (use _ for underline).")
+        asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
     elif step == 'description':
         user_data[str(user_id)]['description'] = text
         user_data[str(user_id)]['step'] = 'about'
         save_user_data(user_data)
-        await send_temp_message(update, "✅ Description received! Please send the about text (use _ for underline).")
+        msg = await message.reply("✅ Description received! Please send the about text (use _ for underline).")
+        asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
     elif step == 'about':
         user_data[str(user_id)]['about'] = text
         user_data[str(user_id)]['step'] = 'status'
         save_user_data(user_data)
-        await send_temp_message(update, "✅ About text received! Please send the status text (ONGOING, PUSHED, COMPLETE, AIRING).")
+        msg = await message.reply("✅ About text received! Please send the status text (ONGOING, PUSHED, COMPLETE, AIRING).")
+        asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
     elif step == 'status':
         if text.upper() in STATUS_OPTIONS:
             user_data[str(user_id)]['status'] = text.upper()
             user_data[str(user_id)]['step'] = 'watermark'
             save_user_data(user_data)
-            await send_temp_message(update, "✅ Status received! Please send the watermark text (or type 'skip' to skip).")
+            msg = await message.reply("✅ Status received! Please send the watermark text (or type 'skip' to skip).")
+            asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
         else:
-            await send_temp_message(update, "❌ Invalid status! Please send one of: ONGOING, PUSHED, COMPLETE, AIRING.")
+            msg = await message.reply("❌ Invalid status! Please send one of: ONGOING, PUSHED, COMPLETE, AIRING.")
+            asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
     elif step == 'watermark':
         user_data[str(user_id)]['watermark_text'] = text if text.lower() != 'skip' else ''
         user_data[str(user_id)]['step'] = 'blur'
         save_user_data(user_data)
-        await send_temp_message(update, "✅ Watermark received! Please send blur intensity (0 for none, 1 for low, 2 for medium, 3 for high).")
+        msg = await message.reply("✅ Watermark received! Please send blur intensity (0 for none, 1 for low, 2 for medium, 3 for high).")
+        asyncio.create_task(delete_message_later(client, message.chat.id, msg.id))
     elif step == 'blur':
         try:
             blur = int(text)
             if 0 <= blur <= 3:
-                user_data[str(user_id)]['blur_intensity'] = blur
+                user_data[str(user_id)]['blur_intensity'] = int(text)
                 user_data[str(user_id)]['step'] = 'font'
                 save_user_data(user_data)
                 # Show font options
                 fonts = get_fonts()
                 if not fonts:
-                    await send_temp_message(update, "❌ No fonts available. Please contact the developer to add fonts like Montserrat, Poppins, or Bebas Neue.")
-                    return
-                keyboard = [[InlineKeyboardButton(font.replace('.ttf', ''), callback_data=f"font_{font}")] for font in fonts]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                await update.message.reply_text("✅ Blur intensity received! Please select a font:", reply_markup=reply_markup)
-            else:
-                await send_temp_message(update, "❌ Invalid blur intensity! Please send a number between 0 and 3.")
-        except ValueError:
-            await send_temp_message(update, "❌ Please send a valid number for blur intensity.")
-
-# Handle font selection
-async def handle_font_selection(update: Update, context):
-    query = update.callback_query
-    user_id = query.from_user.id
-    user_data = load_user_data()
-    if str(user_id) not in user_data or user_data[str(user_id)]['step'] != 'font':
-        await query.answer()
-        return
-
-    font = query.data.replace('font_', '')
-    user_data[str(user_id)]['font'] = font
-    user_data[str(user_id)]['step'] = None
-    save_user_data(user_data)
-
-    try:
-        # Generate banner
-        generate_banner(user_id)
-        await query.message.reply_photo(photo=open(f"{DATA_DIR}{user_id}_banner.jpg", 'rb'))
-        await query.message.reply_text("🎉 Banner created successfully!")
-    except Exception as e:
-        await query.message.reply_text("❌ Error generating banner. Please try again.")
-    await query.answer()
-
-# Generate banner
-def generate_banner(user_id):
-    user_data = load_user_data()[str(user_id)]
-    image_path = user_data['image']
-    name = user_data['name']
-    description = user_data['description']
-    about = user_data['about']
-    status = user_data['status']
-    font = user_data['font']
-    watermark_text = user_data['watermark_text']
-    blur_intensity = user_data['blur_intensity']
-
-    # Load image
-    img = Image.open(image_path)
-    
-    # Apply blur if requested
-    if blur_intensity > 0:
-        img = img.filter(ImageFilter.GaussianBlur(radius=blur_intensity))
-
-    draw = ImageDraw.Draw(img)
-    font_path = os.path.join(FONT_DIR, font)
-    font_size = 40
-    font_obj = ImageFont.truetype(font_path, font_size)
-
-    # Text positions (adjust based on your template)
-    positions = {
-        'name': (50, 50),
-        'description': (50, 150),
-        'about': (50, 250),
-        'status': (50, 350),
-        'watermark': (50, 450)
-    }
-
-    # Draw text with underline support
-    for key, text in [('name', name), ('description', description), ('about', about), ('status', f"{status} {STATUS_EMOJIS[status]}")]:
-        if text:
-            if '_' in text:
-                text = text.replace('_', '')  # Remove underscore for display
-                draw.text(positions[key], text, font=font_obj, fill='white')
-                # Add underline
-                text_width, text_height = draw.textsize(text, font=font_obj)
-                draw.line((positions[key][0], positions[key][1] + text_height, 
-                           positions[key][0] + text_width, positions[key][1] + text_height), fill='white', width=2)
-            else:
-                draw.text(positions[key], text, font=font_obj, fill='white')
-
-    # Add watermark
-    if watermark_text:
-        draw.text(positions['watermark'], watermark_text, font=font_obj, fill=(255, 255, 255, 128))  # Semi-transparent
-
-    # Save banner
-    banner_path = f"{DATA_DIR}{user_id}_banner.jpg"
-    img.save(banner_path)
-
-# Restart bot (VPS only)
-async def restart(update: Update, context):
-    if not is_authorized(update.effective_user.id):
-        await send_temp_message(update, "🚫 You are not authorized to restart the bot.")
-        return
-    await send_temp_message(update, "🔄 Restarting bot...")
-    os.system("nohup python telegram_banner_bot.py &")
-    exit()
-
-# Main function
-def main():
-    # Initialize application
-    application = Application.builder().token(BOT_TOKEN).build()
-
-    # Add handlers
-    application.add_handler(CommandHandler('create_banner', create_banner))
-    application.add_handler(CommandHandler('restart', restart))
-    application.add_handler(MessageHandler(filters.PHOTO, handle_image))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    application.add_handler(CallbackQueryHandler(handle_font_selection, pattern='font_.*'))
-
-    # Start the bot
-    application.run_polling()
-
-if __name__ == '__main__':
-    main()
+                    msg = await message.reply("❌ No fonts available. Please contact the developer to add fonts like Montserrat, Poppins
