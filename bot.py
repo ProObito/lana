@@ -2,15 +2,15 @@ import asyncio
 import time
 from pyrogram import Client
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from config import Config
+from telegram_banner_bot import *
 
 class Bot(Client):
     def __init__(self):
         super().__init__(
             name="AutoRenamerBot",
-            api_id=Config.API_ID,
-            api_hash=Config.API_HASH,
-            bot_token=Config.BOT_TOKEN,
+            api_id=telegram_banner_bot.API_ID,
+            api_hash=telegram_banner_bot.API_HASH,
+            bot_token=telegram_banner_bot.BOT_TOKEN,
             workers=50,  # Reduced for bot-hosting.net
             plugins={"root": "plugins"},
             sleep_threshold=15,
@@ -28,8 +28,7 @@ class Bot(Client):
         uptime = str(timedelta(seconds=int(time.time() - self.start_time)))
         try:
             await self.send_photo(
-                chat_id=Config.LOG_CHANNEL,
-                photo=Config.START_PIC,
+                photo=telegram_banner_bot.START_PIC,
                 caption=f"**Bot is restarted!**\n\nUptime: `{uptime}`",
                 reply_markup=InlineKeyboardMarkup(
                     [[InlineKeyboardButton("Updates", url="https://t.me/animes_sub_society")]]
