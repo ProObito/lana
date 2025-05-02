@@ -1,7 +1,7 @@
 import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from 
+from telegram_banner_bot.py import txt
 
 @Client.on_message(filters.private & filters.command("start"))
 async def start_command(client, message):
