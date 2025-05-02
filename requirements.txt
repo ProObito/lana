@@ -1,3 +1,11 @@
-python-telegram-bot==13.7
-Pillow
-requests
+# +++ Made By Obito [telegram username: @i_killed_my_clan] +++ #
+TgCrypto
+dnspython
+hachoir
+aiohttp
+pytz
+psutil
+pyrogram==2.0.106
+motor
+pillow
+hachoir
