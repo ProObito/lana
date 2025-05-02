@@ -20,7 +20,14 @@ USER_DATA_FILE = os.path.join(DATA_DIR, 'user_data.json')
 AUTHO_USERS_FILE = os.path.join(DATA_DIR, 'autho_users.json')
 STATUS_OPTIONS = ['ONGOING', 'PUSHED', 'COMPLETE', 'AIRING']
 STATUS_EMOJIS = {'ONGOING': '🔍', 'PUSHED': '🔍', 'COMPLETE': '🔍', 'AIRING': '🔍'}
+START_TXT = """<b>Hey! {}  
 
+» I am an advanced rename bot! Which can autorename your files with custom caption and thumbnail and also sequence them perfectly</b>"""
+HELP_TXT = """<b>Here is help menu important commands:
+
+Awesome features🫧
+
+Rename bot is a handy tool that helps you rename and manage your files effortlessly. """
 # Ensure directories exist
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
