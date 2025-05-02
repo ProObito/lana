@@ -1,12 +1,13 @@
 import os
 import json
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler, CallbackContext, JobQueue
+from pyrogram import Update
+from pyrogram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, JobQueue
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import requests
 
 # Configuration
-BOT_TOKEN = '7403693425:AAHaGlkp-zNNPvNeO62xWqwmsRI5apY0Dcs'  # Replace with your bot token
+BOT_TOKEN = os.getenv('BOT_TOKEN', '7403693425:AAHaGlkp-zNNPvNeO62xWqwmsRI5apY0Dcs')  # Use environment variable for security
 FONT_DIR = 'fonts/'
 DATA_DIR = 'data/'
 USER_DATA_FILE = os.path.join(DATA_DIR, 'user_data.json')
@@ -70,31 +71,30 @@ def is_authorized(user_id):
     return user_id in AUTHORIZED_USERS
 
 # Send temporary message (auto-delete)
-def send_temp_message(update: Update, context: CallbackContext, text: str, delay: int = 30):
-    message = update.message.reply_text(text)
-    context.job_queue.run_once(delete_message, delay, context={'chat_id': message.chat_id, 'message_id': message.message_id})
+async def send_temp_message(update: Update, text: str, delay: int = 30):
+    message = await update.message.reply_text(text)
+    JobQueue(update.message.bot).run_once(delete_message, delay, data={'chat_id': message.chat_id, 'message_id': message.message_id})
 
-def delete_message(context: CallbackContext):
-    job = context.job
+async def delete_message(context):
     try:
-        context.bot.delete_message(chat_id=job.context['chat_id'], message_id=job.context['message_id'])
+        await context.bot.delete_message(chat_id=context.job.data['chat_id'], message_id=context.job.data['message_id'])
     except:
         pass
 
 # Start banner creation
-def create_banner(update: Update, context: CallbackContext):
+async def create_banner(update: Update, context):
     user_id = update.effective_user.id
     if not is_authorized(user_id):
-        send_temp_message(update, context, "🚫 You are not authorized to use this bot.")
+        await send_temp_message(update, "🚫 You are not authorized to use this bot.")
         return
 
     user_data = init_user_state(user_id)
     user_data[str(user_id)]['step'] = 'image'
     save_user_data(user_data)
-    send_temp_message(update, context, "🎨 Please upload an image for the banner.")
+    await send_temp_message(update, "🎨 Please upload an image for the banner.")
 
 # Handle image upload
-def handle_image(update: Update, context: CallbackContext):
+async def handle_image(update: Update, context):
     user_id = update.effective_user.id
     user_data = load_user_data()
     if str(user_id) not in user_data or user_data[str(user_id)]['step'] != 'image':
@@ -102,18 +102,18 @@ def handle_image(update: Update, context: CallbackContext):
 
     try:
         photo = update.message.photo[-1]  # Get highest resolution photo
-        file = context.bot.get_file(photo.file_id)
+        file = await photo.get_file()
         image_path = f"{DATA_DIR}{user_id}_image.jpg"
-        file.download(image_path)
+        await file.download_to_drive(image_path)
         user_data[str(user_id)]['image'] = image_path
         user_data[str(user_id)]['step'] = 'name'
         save_user_data(user_data)
-        send_temp_message(update, context, "🖼️ Image received! Please send the name text (use _ for underline, e.g., _Hannah_).")
+        await send_temp_message(update, "🖼️ Image received! Please send the name text (use _ for underline, e.g., _Hannah_).")
     except Exception as e:
-        send_temp_message(update, context, "❌ Error processing image. Please upload a valid image.")
+        await send_temp_message(update, "❌ Error processing image. Please upload a valid image.")
 
 # Handle text inputs
-def handle_text(update: Update, context: CallbackContext):
+async def handle_text(update: Update, context):
     user_id = update.effective_user.id
     user_data = load_user_data()
     if str(user_id) not in user_data:
@@ -126,30 +126,30 @@ def handle_text(update: Update, context: CallbackContext):
         user_data[str(user_id)]['name'] = text
         user_data[str(user_id)]['step'] = 'description'
         save_user_data(user_data)
-        send_temp_message(update, context, "✅ Name received! Please send the description text (use _ for underline).")
+        await send_temp_message(update, "✅ Name received! Please send the description text (use _ for underline).")
     elif step == 'description':
         user_data[str(user_id)]['description'] = text
         user_data[str(user_id)]['step'] = 'about'
         save_user_data(user_data)
-        send_temp_message(update, context, "✅ Description received! Please send the about text (use _ for underline).")
+        await send_temp_message(update, "✅ Description received! Please send the about text (use _ for underline).")
     elif step == 'about':
         user_data[str(user_id)]['about'] = text
         user_data[str(user_id)]['step'] = 'status'
         save_user_data(user_data)
-        send_temp_message(update, context, "✅ About text received! Please send the status text (ONGOING, PUSHED, COMPLETE, AIRING).")
+        await send_temp_message(update, "✅ About text received! Please send the status text (ONGOING, PUSHED, COMPLETE, AIRING).")
     elif step == 'status':
         if text.upper() in STATUS_OPTIONS:
             user_data[str(user_id)]['status'] = text.upper()
             user_data[str(user_id)]['step'] = 'watermark'
             save_user_data(user_data)
-            send_temp_message(update, context, "✅ Status received! Please send the watermark text (or type 'skip' to skip).")
+            await send_temp_message(update, "✅ Status received! Please send the watermark text (or type 'skip' to skip).")
         else:
-            send_temp_message(update, context, "❌ Invalid status! Please send one of: ONGOING, PUSHED, COMPLETE, AIRING.")
+            await send_temp_message(update, "❌ Invalid status! Please send one of: ONGOING, PUSHED, COMPLETE, AIRING.")
     elif step == 'watermark':
         user_data[str(user_id)]['watermark_text'] = text if text.lower() != 'skip' else ''
         user_data[str(user_id)]['step'] = 'blur'
         save_user_data(user_data)
-        send_temp_message(update, context, "✅ Watermark received! Please send blur intensity (0 for none, 1 for low, 2 for medium, 3 for high).")
+        await send_temp_message(update, "✅ Watermark received! Please send blur intensity (0 for none, 1 for low, 2 for medium, 3 for high).")
     elif step == 'blur':
         try:
             blur = int(text)
@@ -160,23 +160,23 @@ def handle_text(update: Update, context: CallbackContext):
                 # Show font options
                 fonts = get_fonts()
                 if not fonts:
-                    send_temp_message(update, context, "❌ No fonts available. Please contact the developer to add fonts like Montserrat, Poppins, or Bebas Neue.")
+                    await send_temp_message(update, "❌ No fonts available. Please contact the developer to add fonts like Montserrat, Poppins, or Bebas Neue.")
                     return
                 keyboard = [[InlineKeyboardButton(font.replace('.ttf', ''), callback_data=f"font_{font}")] for font in fonts]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                update.message.reply_text("✅ Blur intensity received! Please select a font:", reply_markup=reply_markup)
+                await update.message.reply_text("✅ Blur intensity received! Please select a font:", reply_markup=reply_markup)
             else:
-                send_temp_message(update, context, "❌ Invalid blur intensity! Please send a number between 0 and 3.")
+                await send_temp_message(update, "❌ Invalid blur intensity! Please send a number between 0 and 3.")
         except ValueError:
-            send_temp_message(update, context, "❌ Please send a valid number for blur intensity.")
+            await send_temp_message(update, "❌ Please send a valid number for blur intensity.")
 
 # Handle font selection
-def handle_font_selection(update: Update, context: CallbackContext):
+async def handle_font_selection(update: Update, context):
     query = update.callback_query
     user_id = query.from_user.id
     user_data = load_user_data()
     if str(user_id) not in user_data or user_data[str(user_id)]['step'] != 'font':
-        query.answer()
+        await query.answer()
         return
 
     font = query.data.replace('font_', '')
@@ -187,11 +187,11 @@ def handle_font_selection(update: Update, context: CallbackContext):
     try:
         # Generate banner
         generate_banner(user_id)
-        query.message.reply_photo(photo=open(f"{DATA_DIR}{user_id}_banner.jpg", 'rb'))
-        query.message.reply_text("🎉 Banner created successfully!")
+        await query.message.reply_photo(photo=open(f"{DATA_DIR}{user_id}_banner.jpg", 'rb'))
+        await query.message.reply_text("🎉 Banner created successfully!")
     except Exception as e:
-        query.message.reply_text("❌ Error generating banner. Please try again.")
-    query.answer()
+        await query.message.reply_text("❌ Error generating banner. Please try again.")
+    await query.answer()
 
 # Generate banner
 def generate_banner(user_id):
@@ -248,27 +248,28 @@ def generate_banner(user_id):
     img.save(banner_path)
 
 # Restart bot (VPS only)
-def restart(update: Update, context: CallbackContext):
+async def restart(update: Update, context):
     if not is_authorized(update.effective_user.id):
-        send_temp_message(update, context, "🚫 You are not authorized to restart the bot.")
+        await send_temp_message(update, "🚫 You are not authorized to restart the bot.")
         return
-    send_temp_message(update, context, "🔄 Restarting bot...")
+    await send_temp_message(update, "🔄 Restarting bot...")
     os.system("nohup python telegram_banner_bot.py &")
     exit()
 
 # Main function
 def main():
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
+    # Initialize application
+    application = Application.builder().token(BOT_TOKEN).build()
 
-    dp.add_handler(CommandHandler('create_banner', create_banner))
-    dp.add_handler(CommandHandler('restart', restart))
-    dp.add_handler(MessageHandler(Filters.photo, handle_image))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
-    dp.add_handler(CallbackQueryHandler(handle_font_selection, pattern='font_.*'))
+    # Add handlers
+    application.add_handler(CommandHandler('create_banner', create_banner))
+    application.add_handler(CommandHandler('restart', restart))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_image))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    application.add_handler(CallbackQueryHandler(handle_font_selection, pattern='font_.*'))
 
-    updater.start_polling()
-    updater.idle()
+    # Start the bot
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
